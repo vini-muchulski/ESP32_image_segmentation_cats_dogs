@@ -6,13 +6,17 @@ O Fast-SCNN roda no ESP32-S3 e classifica cada pixel de uma imagem RGB de 96 × 
 
 ## Resultados de segmentação
 
-<p align="center">
-  <a href="training/results/viz_test_TFLITE_INT8_gatos_cachorro_unet_v5_fast_scnn_96px.png">
-    <img src="training/results/viz_test_TFLITE_INT8_gatos_cachorro_unet_v5_fast_scnn_96px.png" width="520" alt="Imagens de teste ao lado das máscaras anotadas e das previsões do TFLite INT8">
-  </a>
-</p>
+Cada exemplo do ESP32-S3 mostra a imagem de entrada, a máscara sobreposta à imagem e a máscara de classes prevista. Vermelho indica gato, verde indica cachorro e preto indica fundo.
 
-*Da esquerda para a direita, imagem de entrada, máscara anotada e previsão INT8. Vermelho indica gato, verde indica cachorro e preto indica fundo.*
+![Imagem de teste 000000475732](assets/results/000000475732_plot.png)
+
+![Gato](assets/results/gato5_plot.png)
+
+![Golden retriever](assets/results/golden_recortado_plot.png)
+
+![Gatinho laranja](assets/results/gatinho_laranja_plot.png)
+
+![Cão pastor](assets/results/pastor_plot.png)
 
 | Exportação TFLite | IoU multiclasse no conjunto de teste |
 | --- | ---: |

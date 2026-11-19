@@ -6,20 +6,24 @@ Fast-SCNN runs on the ESP32-S3 and classifies each pixel of a 96 × 96 RGB image
 
 ## Segmentation results
 
-<p align="center">
-  <a href="training/results/viz_test_TFLITE_INT8_gatos_cachorro_unet_v5_fast_scnn_96px.png">
-    <img src="training/results/viz_test_TFLITE_INT8_gatos_cachorro_unet_v5_fast_scnn_96px.png" width="520" alt="Test images alongside ground-truth masks and TFLite INT8 predictions">
-  </a>
-</p>
+Each ESP32-S3 example shows the input image, the mask overlaid on the image, and the predicted class mask. Red marks cats, green marks dogs, and black marks background.
 
-*From left to right, the input image, ground-truth mask, and INT8 prediction. Red marks cats, green marks dogs, and black marks background.*
+![Test image 000000475732](assets/results/000000475732_plot.png)
+
+![Cat](assets/results/gato5_plot.png)
+
+![Golden retriever](assets/results/golden_recortado_plot.png)
+
+![Orange kitten](assets/results/gatinho_laranja_plot.png)
+
+![Shepherd dog](assets/results/pastor_plot.png)
 
 | TFLite export | Test-set multiclass IoU |
 | --- | ---: |
 | FP32 | 0.8347 |
 | **Full INT8** | **0.8207** |
 
-These figures come from the original host evaluation. A historical reference build matched the host bit for bit on all 61 operators for one test image. Hardware parity for the current **TFLite Micro 1.3.8 + ESP-NN 1.3.0** build is pending. [Evaluation details](docs/MODEL_CARD.md) · [Validation procedure](docs/TFLM_DEBUG_PLAYBOOK.md)
+These scores come from the original host evaluation. A historical reference build matched the host bit for bit on all 61 operators for one test image. Hardware parity for the current **TFLite Micro 1.3.8 + ESP-NN 1.3.0** build is pending. [Evaluation details](docs/MODEL_CARD.md) · [Validation procedure](docs/TFLM_DEBUG_PLAYBOOK.md)
 
 <details>
 <summary>Training and validation curves</summary>

@@ -33,10 +33,10 @@ INPUT_INFO_PATH = os.environ.get("INPUT_INFO_PATH", os.path.join(BASE_DIR, "inpu
 #path_img = "imgs/cat_twt/cat2.jpeg"
 #path_img = "imgs/cat_twt/cat8.jpeg"
 
-#path_img = "imgs/gatinho_laranja.jpg"
+path_img = "imgs/gatinho_laranja.jpg"
 
 #path_img = "imgs/twt/gato5.jpeg"
-path_img = "imgs/dog_reddit1.jpeg"
+#path_img = "imgs/dog_reddit1.jpeg"
 #path_img = "imgs/pastor.jpg"
 
 INPUT_IMAGE_PATH = os.environ.get(
