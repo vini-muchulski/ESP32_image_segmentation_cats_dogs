@@ -33,7 +33,7 @@ Parâmetros: 1,204 M · pyramid bins `(1, 3)` · normalização ImageNet
 | Arquivo | MD5 | O que é |
 |---|---|---|
 | `models/model_gatos_cachorro_unet_v5_fast_scnn_96px_infer_int8_full.tflite` | `179689ebac29524d449141e81a9c97d1` | **original de treino** (shapes 141/142 inválidas para TFLM) |
-| `../firmware/data/gatos_v5_fast_scnn.tflite` | `449f7358985e6f3bd59aedc57272cb5e` | **o modelo embarcado** — int8 com o patch de shapes `SPACE_TO_BATCH_ND`/`BATCH_TO_SPACE_ND` (batch 1→16), necessário para runtimes com shapes estáticas (detalhes no README raiz, seção 6.2) |
+| `../firmware/data/gatos_v5_fast_scnn.tflite` | `449f7358985e6f3bd59aedc57272cb5e` | **o modelo embarcado** — int8 com o patch de shapes `SPACE_TO_BATCH_ND`/`BATCH_TO_SPACE_ND` (batch 1→16), necessário para runtimes com shapes estáticas (ver [diagnóstico das shapes](../docs/TFLM_DEBUG_PLAYBOOK.md#known-regressions)) |
 
 Não sobrescreva um pelo outro. O LiteRT no PC produz a mesma saída para os
 dois; o TFLite Micro no ESP32 exige a versão patcheada.

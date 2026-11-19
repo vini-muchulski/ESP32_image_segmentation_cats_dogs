@@ -8,6 +8,11 @@ copiado para dentro deste repositório.
 working tree; o firmware compila a partir desta pasta (o build não foi
 executado nesta preparação).
 
+| Componente | Upstream | Tag | Commit |
+|---|---|---|---|
+| `tflite-lib` | `espressif/esp-tflite-micro` | **v1.3.8** | `d6465fd` |
+| `esp-nn` | `espressif/esp-nn` | **v1.3.0** | `d8866fa` |
+
 ---
 
 ## 1. `tflite-lib/` — TensorFlow Lite Micro (submodule)
@@ -20,6 +25,15 @@ executado nesta preparação).
   próprio `CMakeLists.txt` (linha 134) e a dependência `esp-nn` já está
   declarada. Não é mais necessário manter uma árvore local de ~390 arquivos.
 
+### Por que v1.3.8 (e não a v1.4.3)
+
+A v1.4.3 já contém o fix de `space_to_batch` (dispensaria o patch #1) e a
+opção de Kconfig `ESP_TFLITE_MICRO_USE_ESP_NN`, mas **removeu** o
+`tflite_bridge/micro_error_reporter.h` — API usada pelo
+`firmware/src/main.cpp` — e exige **esp-nn ≥ 1.4.2**. A v1.3.8 mantém o
+firmware como está e o esp-nn v1.3.0; migrar para a v1.4.3 é uma atualização
+futura (portar a API, subir o esp-nn e regenerar/revalidar os patches).
+
 ### Histórico
 
 Até nov/2026 o projeto usava uma árvore **vendored**, baseada em um snapshot
@@ -31,7 +45,7 @@ tag escolhida ainda não tinha.
 
 | Patch | O que faz | Por que é necessário |
 |---|---|---|
-| `space_to_batch_nd.patch` | `Prepare()` inicializa `SpaceToBatchParams::output_offset` com o zero-point da saída | É o mesmo fix que entrou no upstream na **v1.4.3** (backport). Sem ele, o padding INT8 usa memória não inicializada (`0xAA`) e contamina logits/máscara — diagnóstico completo no README raiz, §6 |
+| `space_to_batch_nd.patch` | `Prepare()` inicializa `SpaceToBatchParams::output_offset` com o zero-point da saída | É o mesmo fix que entrou no upstream na **v1.4.3** (backport). Sem ele, o padding INT8 usa memória não inicializada (`0xAA`) e contamina logits/máscara — diagnóstico nas [notas de engenharia](../docs/HISTORY_2026_09.md) |
 | `concatenation.patch` | `kMaxInputNum` 10 → 128 | O grafo Fast-SCNN convertido tem concatenations com >10 entradas; o upstream (ainda) trava em 10 |
 | `cmake-esp-nn-requirement.patch` | adiciona `esp-nn` a `priv_req` no `CMakeLists.txt` | usando o esp-nn como componente local (submodule), o upstream não declara a dependência no CMake (espera o IDF Component Manager); sem isso os wrappers não encontram `esp_nn.h` |
 | `disable-component-manager.patch` | remove o `idf_component.yml` do submodule | evita que o IDF Component Manager baixe um esp-nn duplicado para `managed_components/`; o projeto usa o submodule local (versão pinada) |
@@ -45,8 +59,7 @@ tag escolhida ainda não tinha.
   Referência: `patches/tflite-lib/reference/dilated-conv-subgrids-OLD-TREE.diff`
   (contra `conv.cc.bak`, ambos do tree antigo).
 - **OPTRACE** — a instrumentação de depuração por operador da árvore antiga
-  não foi trazida (era gated por `-DENABLE_OPTRACE`). O playbook do README
-  raiz, §7, descreve o procedimento.
+  não foi trazida (era gated por `-DENABLE_OPTRACE`). O [guia de depuração](../docs/TFLM_DEBUG_PLAYBOOK.md) descreve o procedimento.
 
 ### Observação: `idf_component.yml` (resolvido por patch)
 
@@ -107,4 +120,4 @@ regenerar.
 | **v1.3.8 + patches (esta árvore)** | **revalidação pendente** — repetir o procedimento D5 antes de confiar no resultado |
 
 Qualquer bump de versão (TFLM ou esp-nn) exige repetir a validação por
-operador (playbook no README raiz, §7).
+operador. [Guia de depuração](../docs/TFLM_DEBUG_PLAYBOOK.md)

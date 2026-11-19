@@ -36,6 +36,10 @@ __pycache__/
 python/results/
 python/results_pc/
 python/old_results/
+# saídas dos scripts em firmware/python/ (testes no dispositivo):
+firmware/python/results/
+firmware/python/results_pc/
+firmware/python/old_results/
 
 # ---------- Editores / SO ----------
 .vscode/

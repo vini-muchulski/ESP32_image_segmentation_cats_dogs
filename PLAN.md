@@ -293,6 +293,7 @@ github_repo_fast_scnn_cats_dog/
 | D5 | Release com esp-nn v1.3.0 otimizado ou reference puro | **Parcialmente: esp-nn v1.3.0 + `-DESP_NN` ativo; falta revalidação bit a bit na árvore nova (TFLM v1.3.8 + patches) — procedimento em `firmware/comandos.txt`** |
 | D6 | Idioma dos docs públicos | Pendente (recomendo inglês + `README.pt-BR.md`) |
 | D7 | Licença | Pendente (recomendo Apache-2.0) |
+| D8 | Versão do TFLM upstream | **v1.3.8** (não v1.4.3): mantém a API do `main.cpp` (`tflite_bridge/micro_error_reporter.h`) e o esp-nn v1.3.0; a v1.4.3 exigiria port da API + esp-nn ≥ 1.4.2 |
 
 ## Ordem de execução sugerida
 

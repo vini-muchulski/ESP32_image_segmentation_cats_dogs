@@ -36,6 +36,7 @@ ESP-IDF (via PlatformIO), replicando a arquitetura validada nos projetos
 | Framework | `framework = espidf` (PlatformIO) | Integração direta com TFLM, LittleFS e futura ativação controlada do esp-nn |
 | Modelo | `data/gatos_v5_fast_scnn.tflite` (25 chars) | `mklittlefs` limita nomes a 32 chars; original preservado no diretório de treino |
 | TFLite Micro | submodule `espressif/esp-tflite-micro` @ v1.3.8 via `EXTRA_COMPONENT_DIRS` (`components/tflite-lib`) | Componente IDF com kernels esp-nn; 4 patches em `components/patches/tflite-lib/` |
+| Versão do TFLM | `esp-tflite-micro` **v1.3.8** | Mantém a API usada pelo `main.cpp` (`tflite_bridge/micro_error_reporter.h`) e o esp-nn v1.3.0; a v1.4.3 exigiria port da API + esp-nn ≥ 1.4.2 |
 | ESP-NN | submodule `espressif/esp-nn` @ v1.3.0, `-DESP_NN` **ativo** | v1.3.0 corrige o Conv2D S3; revalidação bit a bit pendente (D5) |
 | Op resolver | `MicroMutableOpResolver<9>` | Add, AveragePool2D, BatchToSpaceNd, Concatenation, Conv2D, DepthwiseConv2D, Mul, ResizeBilinear, SpaceToBatchNd |
 | Normalização de entrada | ImageNet por canal: `(px/255 - mean[c])/std[c]`, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225) | **Diferente do v3** (`px/127.5 - 1`); modelo treinado com essa normalização |
@@ -119,7 +120,7 @@ ESP32_image_segmentation_cats_dogs/
 - [x] Atualizar esp-nn para v1.3.0 (submodule) e reativar `-DESP_NN`.
 - [x] `OPTRACE` fora do build (a árvore nova não inclui a instrumentação).
 - [ ] **Revalidar bit a bit a árvore otimizada** (TFLM v1.3.8 + patches) no
-      hardware — procedimento em `comandos.txt` / playbook do README raiz.
+      hardware — procedimento em `comandos.txt` e no [guia de depuração](../docs/TFLM_DEBUG_PLAYBOOK.md).
 - [ ] Medir desempenho final e reduzir a arena, se desejado.
 
 ## Cobertura do esp-nn (v1.3.0)
@@ -241,8 +242,7 @@ Interpretação:
 - 61/61 hashes iguais e `max_abs_diff = 0`: execução bit-idêntica.
 
 A explicação detalhada, incluindo as limitações do reuso da arena e a prova do
-padding `0xAA`, está na seção “Playbook reutilizável de debug TFLM” do README
-da raiz.
+padding `0xAA`, está nas [notas de engenharia](../docs/HISTORY_2026_09.md).
 
 ## Ambiente `pio`
 
