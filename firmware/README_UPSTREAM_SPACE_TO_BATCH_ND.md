@@ -4,6 +4,14 @@ Documento preparado em 02/09/2026 para preservar o diagnóstico e facilitar
 uma futura contribuição ao repositório oficial:
 https://github.com/tensorflow/tflite-micro
 
+> **Atualização (nov/2026):** o fix **entrou no upstream** — a
+> `espressif/esp-tflite-micro` **v1.4.3** inicializa `output_offset` em
+> `SpaceToBatchNDPrepare` (`params->output_offset = input->type ==
+> kTfLiteInt8 ? output->params.zero_point : 0;`). Este projeto usa a v1.3.8
+> com esse fix como **backport** em
+> `components/patches/tflite-lib/space_to_batch_nd.patch`. A issue/PR upstream
+> não é mais necessária; este documento fica como registro do diagnóstico.
+
 ## Resumo executivo
 
 O kernel Micro de SPACE_TO_BATCH_ND aloca um SpaceToBatchParams em memória
@@ -25,7 +33,7 @@ A correção local foi:
 Após a correção, os 61 operadores, os 27.648 logits e as 9.216 classes ficaram
 bit a bit idênticos entre o ESP32 e o LiteRT no PC.
 
-## Estado upstream verificado em 02/09/2026
+## Estado upstream verificado em 02/09/2026 (superado — ver atualização)
 
 O problema ainda existia em:
 
@@ -156,7 +164,8 @@ Confirmar o nome atual do target no BUILD antes de enviar.
 
 ## Checklist para retomar daqui a alguns meses
 
-- [ ] Verificar novamente se main inicializa output_offset com o zero-point.
+- [x] Verificar novamente se main inicializa output_offset com o zero-point
+      — **confirmado na v1.4.3 (nov/2026)**.
 - [ ] Procurar issues e PRs abertas e fechadas pelos três termos do problema.
 - [ ] Registrar o SHA exato do commit atual.
 - [ ] Criar uma reprodução mínima sem Fast-SCNN, ESP-NN, HTTP ou OPTRACE.
@@ -260,5 +269,5 @@ Corpo:
 
 ## Links finais
 
-- Issue: ainda não aberta.
-- Pull request: ainda não aberto.
+- Issue: **não necessária** — fix entrou no upstream na v1.4.3 (nov/2026).
+- Pull request: **não necessária**.

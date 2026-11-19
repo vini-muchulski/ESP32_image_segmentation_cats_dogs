@@ -8,9 +8,11 @@ ESP-IDF (via PlatformIO), replicando a arquitetura validada nos projetos
 `TF_Lite-wolosky_net_paper/idf_esp32-s3/` e
 `TF_Lite-gatos_cachorro_unet_v3_DeepLab_Mobilenetv2/esp32_s3_code/`:
 
-1. **TFLite Micro validado com kernels de referência** — o caminho atual
-   mantém `-DESP_NN` desabilitado para formar uma baseline bit-idêntica ao
-   LiteRT. A otimização será reativada após atualizar esp-nn para ≥ v1.3.0.
+1. **TFLite Micro + esp-nn** — `components/` traz os dois como submodules
+   upstream (`esp-tflite-micro` v1.3.8 + `esp-nn` v1.3.0) com patches locais
+   mínimos; `-DESP_NN` está **ativo**. O build de referência (sem esp-nn) foi
+   validado bit a bit contra o LiteRT; a revalidação da árvore otimizada está
+   pendente (D5).
 2. **Modelo em LittleFS** carregado para PSRAM em runtime (sem header C).
 3. **HTTP `esp_http_server`** com `POST /predict_bin` (entrada RGB raw de
    27.648 B), retorno de máscara ou logits e telemetria `X-*` (tempos,
@@ -33,8 +35,8 @@ ESP-IDF (via PlatformIO), replicando a arquitetura validada nos projetos
 |---|---|---|
 | Framework | `framework = espidf` (PlatformIO) | Integração direta com TFLM, LittleFS e futura ativação controlada do esp-nn |
 | Modelo | `data/gatos_v5_fast_scnn.tflite` (25 chars) | `mklittlefs` limita nomes a 32 chars; original preservado no diretório de treino |
-| TFLite Micro | `components/tflite-lib` via `EXTRA_COMPONENT_DIRS` | Componente IDF com kernels esp-nn |
-| ESP-NN | checkout local v1.1.2, `-DESP_NN` temporariamente desabilitado | Baseline de referência validada; atualizar para ≥ v1.3.0 antes de reativar |
+| TFLite Micro | submodule `espressif/esp-tflite-micro` @ v1.3.8 via `EXTRA_COMPONENT_DIRS` (`components/tflite-lib`) | Componente IDF com kernels esp-nn; 4 patches em `components/patches/tflite-lib/` |
+| ESP-NN | submodule `espressif/esp-nn` @ v1.3.0, `-DESP_NN` **ativo** | v1.3.0 corrige o Conv2D S3; revalidação bit a bit pendente (D5) |
 | Op resolver | `MicroMutableOpResolver<9>` | Add, AveragePool2D, BatchToSpaceNd, Concatenation, Conv2D, DepthwiseConv2D, Mul, ResizeBilinear, SpaceToBatchNd |
 | Normalização de entrada | ImageNet por canal: `(px/255 - mean[c])/std[c]`, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225) | **Diferente do v3** (`px/127.5 - 1`); modelo treinado com essa normalização |
 | Quantização input | `q = round(v/scale) + zp`, scale=0.018658448, zp=−14 | Lida do tensor; input int8 |
@@ -49,33 +51,38 @@ ESP-IDF (via PlatformIO), replicando a arquitetura validada nos projetos
 > o diagrama abaixo mostra a localização relativa deste porte.
 
 ```
-github_repo_fast_scnn_cats_dog/
+ESP32_image_segmentation_cats_dogs/
 ├── training/                                      # treino/exportação (v5)
 │   ├── gatos_cachorro_unet_v5_fast_scnn_96px.ipynb
 │   ├── tf_2_0_fast_scnn.py                        # arquitetura
 │   ├── models/                                    # inclui o int8_full original
 │   │   └── model_..._infer_int8_full.tflite       # original 1.527.800 B (MD5 179689eb...)
 │   └── results/
-└── firmware/                                     # ← porte ESP32 (este plano)
-    ├── README.md                                  # este plano
-    ├── platformio.ini                             # espidf, 16 MB QIO, littlefs
-    ├── partitions.csv                             # app 6 MB + littlefs 9,88 MB
-    ├── sdkconfig.defaults                         # 240 MHz, QIO 80M, PSRAM OPI, WDT 15 s
-    ├── CMakeLists.txt                             # EXTRA_COMPONENT_DIRS -> ../components
-    ├── src/
-    │   ├── main.cpp                               # app_main() — porta do main.cpp v3
-    │   ├── CMakeLists.txt
-    │   └── idf_component.yml                      # joltwallet/littlefs
-    ├── data/
-    │   └── gatos_v5_fast_scnn.tflite              # modelo INT8 patcheado (1.527.800 B, MD5 449f7358...)
-    └── python/
-        ├── teste_inferencia.py                    # cliente HTTP (PIL/numpy, sem TF)
-        ├── get_input_info.py                      # gera input_info.json (ai-edge-litert ou TF)
-        ├── input_info.json                        # scale/zp do input
-        ├── sanity_check_host.py                   # validação offline do pipeline
-        ├── inferencia_pc.py                      # máscara/logits de referência LiteRT
-        ├── trace_operadores_pc.py                 # comparação dos 61 operadores
-        └── imgs/                                  # imagens de teste (mesmo dataset SAM3)
+├── firmware/                                      # ← porte ESP32 (este plano)
+│   ├── README.md                                  # este plano
+│   ├── platformio.ini                             # espidf, 16 MB QIO, littlefs
+│   ├── partitions.csv                             # app 6 MB + littlefs 9,88 MB
+│   ├── sdkconfig.defaults                         # 240 MHz, QIO 80M, PSRAM OPI, WDT 15 s
+│   ├── CMakeLists.txt                             # EXTRA_COMPONENT_DIRS -> ../components
+│   ├── src/
+│   │   ├── main.cpp                               # app_main() — porta do main.cpp v3
+│   │   ├── CMakeLists.txt
+│   │   └── idf_component.yml                      # joltwallet/littlefs
+│   ├── data/
+│   │   └── gatos_v5_fast_scnn.tflite              # modelo INT8 patcheado (1.527.800 B, MD5 449f7358...)
+│   └── python/
+│       ├── teste_inferencia.py                    # cliente HTTP (PIL/numpy, sem TF)
+│       ├── get_input_info.py                      # gera input_info.json (ai-edge-litert ou TF)
+│       ├── input_info.json                        # scale/zp do input
+│       ├── sanity_check_host.py                   # validação offline do pipeline
+│       ├── inferencia_pc.py                       # máscara/logits de referência LiteRT
+│       ├── trace_operadores_pc.py                 # comparação dos 61 operadores
+│       └── imgs/                                  # imagens de teste (mesmo dataset SAM3)
+└── components/                                    # dependências do firmware (submodules + patches)
+    ├── tflite-lib/                                # SUBMODULE espressif/esp-tflite-micro @ v1.3.8
+    ├── esp-nn/                                    # SUBMODULE espressif/esp-nn @ v1.3.0
+    ├── patches/                                   # 4 patches do TFLM + library.json do esp-nn
+    └── PROVENANCE.md
 ```
 
 > Nota (nov/2026): `.venv/`, `managed_components/` e os diretórios de
@@ -107,12 +114,15 @@ github_repo_fast_scnn_cats_dog/
 - [x] Logits e máscara final bit-idênticos; golden = `[6623, 0, 2593]`.
 
 ### Fase 3 — Otimização e acabamento
-- [ ] Remover instrumentação temporária `OPTRACE`.
-- [ ] Atualizar esp-nn local de v1.1.2 para ≥ v1.3.0.
-- [ ] Reativar `-DESP_NN` e repetir validação funcional.
+- [x] Migrar `tflite-lib` para o upstream `espressif/esp-tflite-micro` v1.3.8
+      como submodule (+ patches em `components/patches/`).
+- [x] Atualizar esp-nn para v1.3.0 (submodule) e reativar `-DESP_NN`.
+- [x] `OPTRACE` fora do build (a árvore nova não inclui a instrumentação).
+- [ ] **Revalidar bit a bit a árvore otimizada** (TFLM v1.3.8 + patches) no
+      hardware — procedimento em `comandos.txt` / playbook do README raiz.
 - [ ] Medir desempenho final e reduzir a arena, se desejado.
 
-## Cobertura potencial do esp-nn após a atualização
+## Cobertura do esp-nn (v1.3.0)
 
 Cobertura das 9 ops do modelo:
 
@@ -128,21 +138,22 @@ Cobertura das 9 ops do modelo:
 | CONCATENATION | 1 | TFLM genérico (barata) |
 | RESIZE_BILINEAR | 4 | TFLM genérico (barata) |
 
-Quando o esp-nn for atualizado e reativado, **54/61 operadores (88%) têm
-caminho SIMD potencial**; os demais continuam no TFLM genérico. Após o build,
-confirmar com `nm`/map e repetir a comparação funcional completa.
+Com o esp-nn v1.3.0 ativo, **54/61 operadores (88%) têm caminho SIMD
+potencial**; os demais continuam no TFLM genérico. Após o build, confirmar com
+`nm`/map e repetir a comparação funcional completa.
 
 ## Status
 
 | Item | Estado |
 |---|---|
-| Build e gravação | concluídos |
+| Build e gravação | concluídos (árvore antiga) |
 | Modelo no LittleFS | corrigido, MD5 `449f7358985e6f3bd59aedc57272cb5e` |
-| Kernel `SPACE_TO_BATCH_ND` | corrigido (`output_offset = zero_point`) |
-| Baseline reference | **61/61 operadores e saída final bit-idênticos ao PC** |
+| Kernel `SPACE_TO_BATCH_ND` | corrigido por patch (backport do fix upstream v1.4.3) |
+| Baseline reference | **61/61 operadores e saída final bit-idênticos ao PC** (árvore antiga) |
 | Golden | `[6623, 0, 2593]` no ESP32 e PC |
-| OPTRACE | ativo temporariamente |
-| esp-nn | v1.1.2 local, desabilitado; atualização/benchmark pendentes |
+| `OPTRACE` | não incluído na árvore nova (era instrumentação local) |
+| Componentes | submodules esp-tflite-micro v1.3.8 + esp-nn v1.3.0, patches aplicados |
+| Otimização | `-DESP_NN` **ativo**; revalidação bit a bit **pendente** (D5) |
 
 ## Diagnóstico resolvido e cuidados
 
@@ -171,8 +182,8 @@ bit a bit idênticos entre o ESP32 e o PC.
   `max_abs_diff = 0` nos logits e máscaras idênticas.
 - O tempo de ~15 s observado no diagnóstico é principalmente consequência
   dos kernels de referência; a instrumentação `OPTRACE` também adiciona I/O.
-- Não reativar o checkout atual esp-nn v1.1.2 como configuração final. Atualizar
-  para ≥ v1.3.0, limpar `.pio/build` e validar novamente.
+- O esp-nn está na v1.3.0 (submodule) com `-DESP_NN` ativo; limpar
+  `.pio/build` e revalidar a árvore nova antes de confiar no resultado.
 - `pio run -t uploadfs` só é necessário quando o conteúdo de `data/` mudar.
 - A PSRAM permaneceu estável; não houve evidência de corrupção ou vazamento.
 
@@ -235,14 +246,15 @@ da raiz.
 
 ## Ambiente `pio`
 
-O `pio` do sistema está quebrado (core órfão/versão apt incompatível). Usar:
-- **Este projeto**: `source .venv/bin/activate` (platformio 6.1.19) ou `.venv/bin/pio`
-- **VSCode**: extensão PlatformIO usa `~/.platformio/penv` (core 6.1.19 reinstalado)
+Requer PlatformIO Core ≥ 6.1.19. Neste ambiente, o `pio` do sistema estava
+quebrado (core órfão/versão apt incompatível); o autor usa um venv local
+(`source .venv/bin/activate`, ignorado pelo git) ou o `penv` da extensão do
+VSCode.
 
 ## Comandos
 
 ```bash
-source .venv/bin/activate     # ou use .venv/bin/pio diretamente
+source .venv/bin/activate     # opcional (venv local; não versionado)
 pio run                       # build
 pio run -t buildfs            # gera imagem LittleFS (data/)
 pio run -t uploadfs           # grava LittleFS (1ª vez obrigatório)

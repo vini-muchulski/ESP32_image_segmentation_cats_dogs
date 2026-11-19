@@ -1,20 +1,20 @@
-# Experimento Fast-SCNN 96px (UNet v5) — Workspace
+# Experimento Fast-SCNN 96px (UNet v5) — ESP32-S3
 
-Workspace com firmware de inferência TinyML (segmentação gato/cachorro/fundo,
-**Fast-SCNN 96px INT8**) para **ESP32-S3** (framework ESP-IDF), com
-**componentes comuns compartilhados**.
+Projeto de segmentação semântica gato/cachorro/fundo com **Fast-SCNN 96px
+INT8** para **ESP32-S3** (framework ESP-IDF): treinamento (`training/`),
+firmware de inferência TinyML (`firmware/`) e componentes de runtime
+(`components/`) mantidos como **submodules upstream + patches mínimos**
+(nov/2026).
 
-O objetivo estrutural: ter um conjunto de componentes reutilizáveis
-(`components/`) que permite levar **TFLite Micro com kernels
-otimizados do esp-nn** para qualquer projeto de IA embarcada no
-ESP32-S3, sem acoplar a configuração a um projeto específico.
+As seções 6 e 7 registram o debug bit a bit e o playbook de bisseção que
+levaram o firmware a reproduzir o LiteRT exatamente (61/61 operadores).
 
 ---
 
 ## 1. Estrutura
 
 ```
-github_repo_fast_scnn_cats_dog/
+ESP32_image_segmentation_cats_dogs/
 ├── training/                                        # treino/exportação (onnx2tf) + modelos + plots
 │   ├── gatos_cachorro_unet_v5_fast_scnn_96px.ipynb
 │   ├── tf_2_0_fast_scnn.py                         # arquitetura (importada pelo notebook)
@@ -26,57 +26,72 @@ github_repo_fast_scnn_cats_dog/
 │   ├── data/                 # modelo .tflite gravado no LittleFS
 │   ├── src/main.cpp          # servidor HTTP + inferência TFLM
 │   └── python/               # teste_inferencia.py, sanity_check_host.py
-├── components/                    # era fast_cnn_cats_components/ (nov/2026)
-│   ├── tflite-lib/               # TFLite Micro + wrappers esp_nn; SUBMODULE (repo próprio do autor)
-│   ├── esp-nn/                   # kernels SIMD; SUBMODULE @ v1.3.0
-│   ├── patches/                  # overrides locais + referências (ver PROVENANCE.md)
-│   └── PROVENANCE.md             # linhagem e modificações dos componentes
-└── README.md                     # este arquivo
+├── components/
+│   ├── tflite-lib/           # SUBMODULE espressif/esp-tflite-micro @ v1.3.8
+│   ├── esp-nn/               # SUBMODULE espressif/esp-nn @ v1.3.0
+│   ├── patches/              # patches locais aplicados sobre os submodules
+│   └── PROVENANCE.md         # linhagem, patches e como reaplicá-los
+└── README.md                 # este arquivo
 ```
 
 ---
 
-## 2. Componentes comuns (reutilizáveis em outros projetos)
+## 2. Componentes (`components/` — submodules upstream + patches)
+
+Os dois componentes são **submodules upstream** pinados por tag; as
+modificações locais ficam em `components/patches/` e são aplicadas ao working
+tree dos submodules. Linhagem, justificativa de cada patch e comandos de
+restauração: `components/PROVENANCE.md`.
 
 ### `tflite-lib`
-Biblioteca TFLite Micro (fork espressif/esp-tflite-micro) com os kernels que
-delegam ao esp-nn (`tensorflow/lite/micro/kernels/esp_nn/`: `conv.cc`,
-`depthwise_conv.cc`, `add.cc`, `mul.cc`, etc.). Requer **`-DESP_NN`** nos
-flags de compilação para ativar o caminho otimizado (`CMakeLists.txt:104`);
-os kernels de ops sem versão esp-nn caem automaticamente no `reference` do
-TFLite Micro.
+Submodule de [`espressif/esp-tflite-micro`](https://github.com/espressif/esp-tflite-micro)
+@ **v1.3.8** (`d6465fd`) — o fork oficial do TFLite Micro como componente
+ESP-IDF, com os kernels que delegam ao esp-nn
+(`tensorflow/lite/micro/kernels/esp_nn/`: `conv.cc`, `depthwise_conv.cc`,
+`add.cc`, `mul.cc`, etc.) e `-DESP_NN` ativo no `CMakeLists.txt` do
+componente. Ops sem versão esp-nn caem automaticamente no `reference`.
 
-**Modificações locais neste experimento (set/2026):**
-- `CMakeLists.txt` — **A/B TEST**: a dependência `esp-nn` permanece em
-  `PRIV_REQUIRES`, mas `-DESP_NN` está comentado. O build atual usa kernels
-  de referência e foi validado bit a bit contra o LiteRT.
-- `tensorflow/lite/micro/kernels/space_to_batch_nd.cc` — inicializa
-  `SpaceToBatchParams::output_offset` com `output->params.zero_point`. Sem
-  isso, o ESP32 preenchia o padding INT8 com o padrão de memória `0xAA`.
-- `tensorflow/lite/micro/kernels/resize_bilinear.cc` — mantido no caminho
-  inteiro (`ResizeBilinearInteger`, Q10), igual ao LiteRT para este grafo.
-- `tensorflow/lite/micro/micro_graph.cc` — instrumentação temporária
-  `OPTRACE` após cada operador; remover após concluir os testes de desempenho.
+**Patches aplicados (`patches/tflite-lib/`):**
+- `space_to_batch_nd.patch` — inicializa `SpaceToBatchParams::output_offset`
+  com o zero-point da saída: é o mesmo fix que entrou no upstream na
+  **v1.4.3** (backport). Sem ele, o ESP32 preenche o padding INT8 com o
+  padrão de memória `0xAA` (diagnóstico na seção 6).
+- `concatenation.patch` — `kMaxInputNum` 10 → 128 (concats com >10 entradas
+  no grafo convertido).
+- `cmake-esp-nn-requirement.patch` — declara `esp-nn` no `CMakeLists.txt`
+  (o upstream espera o IDF Component Manager; aqui o esp-nn é submodule local).
+- `disable-component-manager.patch` — remove o `idf_component.yml` para evitar
+  um esp-nn duplicado em `managed_components/`.
+
+> **Divergência conhecida:** convolução dilatada (`dilation > 1`) usa o kernel
+> `reference` do upstream — correto, porém sem SIMD. A otimização de sub-grids
+> da árvore antiga está preservada em `patches/tflite-lib/reference/` e ainda
+> não foi portada.
 
 ### `esp-nn`
-Kernels SIMD otimizados da Espressif. **É um git submodule** pinado em
-**v1.3.0** (`d8866fa`), que corrige o kernel Conv2D S3 para padding SAME
+Submodule de [`espressif/esp-nn`](https://github.com/espressif/esp-nn) @
+**v1.3.0** (`d8866fa`): corrige o kernel Conv2D S3 para padding SAME
 assimétrico, grouped conv e sizing do scratch (a v1.1.2 usada durante o
-desenvolvimento tinha bug conhecido de Conv2D S3). Após um clone:
+desenvolvimento tinha bug conhecido de Conv2D S3). É o requisito mínimo do
+projeto para `-DESP_NN`.
+
+> O override `library.json` (build Arduino/PlatformIO via `lib_extra_dirs`)
+> vive em `patches/esp-nn/` — o upstream não o publica.
+
+### Restaurar o estado de build após um clone limpo
 
 ```bash
-git clone --recurse-submodules <url-do-repo>
-# ou, em um clone já feito:
-git submodule update --init
-# restaurar o override local (upstream não publica library.json):
-cp components/patches/esp-nn/library.json \
-   components/esp-nn/
-```
+git clone --recurse-submodules https://github.com/vini-muchulski/ESP32_image_segmentation_cats_dogs.git
+cd ESP32_image_segmentation_cats_dogs
 
-> O `library.json` dá suporte a build Arduino/PlatformIO via
-> `lib_extra_dirs`; a cópia canônica versionada vive em
-> `patches/esp-nn/`. Linhagem e modificações de ambos os componentes:
-> `components/PROVENANCE.md`.
+# patches do TFLM (aplicar dentro do submodule):
+for p in components/patches/tflite-lib/*.patch; do
+  git -C components/tflite-lib apply "$PWD/$p"
+done
+
+# override do esp-nn (apenas builds Arduino/PlatformIO):
+cp components/patches/esp-nn/library.json components/esp-nn/
+```
 
 ---
 
@@ -179,13 +194,14 @@ framework).
 
 | Item | Estado |
 |---|---|
-| esp-nn | **submodule @ v1.3.0** (`d8866fa`); `library.json` preservado via `patches/esp-nn/` (nov/2026) |
+| `tflite-lib` | **submodule `espressif/esp-tflite-micro` @ v1.3.8** (`d6465fd`) + 4 patches em `components/patches/tflite-lib/` (nov/2026) |
+| esp-nn | **submodule `espressif/esp-nn` @ v1.3.0** (`d8866fa`); `library.json` em `patches/esp-nn/` |
 | Modelo `.tflite` | patch de shapes aplicado em `data/gatos_v5_fast_scnn.tflite`, MD5 `449f7358985e6f3bd59aedc57272cb5e`; original de treino MD5 `179689ebac29524d449141e81a9c97d1` |
-| `SPACE_TO_BATCH_ND` | corrigido: `output_offset` inicializado com o zero-point do tensor |
-| Validação device × PC | **61/61 operadores, 27.648 logits e 9.216 classes bit-idênticos** no build de referência |
+| `SPACE_TO_BATCH_ND` | corrigido por patch (backport do fix upstream v1.4.3): `output_offset` = zero-point |
+| Validação device × PC | **61/61 operadores, 27.648 logits e 9.216 classes bit-idênticos** no build de referência (árvore antiga, set/2026) |
 | Golden | classes `[6623, 0, 2593]` tanto no ESP32 quanto no PC; hash final dos logits `e00d853e` |
-| Instrumentação | hashes de entrada/logits e `OPTRACE` ativos temporariamente |
-| Otimização | `-DESP_NN` **ativo** com esp-nn v1.3.0 (nov/2026); revalidação bit a bit em hardware pendente — procedimento em `firmware/comandos.txt` |
+| Instrumentação | `OPTRACE` não incluído na árvore nova (era instrumentação local — ver `components/PROVENANCE.md`) |
+| Otimização | `-DESP_NN` **ativo** com esp-nn v1.3.0; **revalidação pendente na árvore nova (TFLM v1.3.8)** — procedimento em `firmware/comandos.txt` |
 
 ## 5. Referências por projeto
 
@@ -311,14 +327,14 @@ operador evita esse problema.
 
 ### 6.6 Próximos passos
 
-1. ~~Remover a instrumentação `OPTRACE`~~ — **feito (nov/2026)**: agora é
-   opcional via `-DENABLE_OPTRACE` no `tflite-lib/CMakeLists.txt` (linha
-   comentada); não entra no build normal.
+1. ~~Remover a instrumentação `OPTRACE`~~ — **feito (nov/2026)**: a árvore
+   nova usa o upstream `esp-tflite-micro` v1.3.8 e não inclui a
+   instrumentação (era local; ver `components/PROVENANCE.md`).
 2. ~~Atualizar `esp-nn` para v1.3.0~~ — **feito (nov/2026)**: submodule
    pinado em v1.3.0 (`d8866fa`).
-3. Revalidar bit a bit com a v1.3.0: limpar completamente o build e repetir
-   a comparação
-   de máscara/logits antes de medir desempenho.
+3. Revalidar bit a bit **na árvore nova (TFLM v1.3.8 + patches)**: limpar
+   completamente o build e repetir a comparação de máscara/logits antes de
+   medir desempenho.
 4. Corrigir a exportação no notebook para produzir as shapes 141/142 certas,
    evitando depender do patch binário.
 5. Considerar enviar a correção de `output_offset` ao fork/origem do TFLM.

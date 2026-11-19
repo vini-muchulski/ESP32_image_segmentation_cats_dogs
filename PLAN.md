@@ -55,9 +55,11 @@ github_repo_fast_scnn_cats_dog/
 │   ├── tf_2_0_fast_scnn.py    # arquitetura
 │   ├── requirements.txt       # deps de treino (TF 2.18, tf2onnx, onnx2tf...)
 │   └── models/                # artefatos finais (fp32/int8 .tflite, .onnx) + MD5
-├── components/                # ← era fast_cnn_cats_components/ (renomeada nov/2026)
-│   ├── tflite-lib/            # TFLM (fork espressif) + patches documentados
-│   └── esp-nn/                # sem .git; versão fixada (ver Fase 3)
+├── components/                # submodules upstream + patches (nov/2026)
+│   ├── tflite-lib/            # SUBMODULE espressif/esp-tflite-micro @ v1.3.8
+│   ├── esp-nn/                # SUBMODULE espressif/esp-nn @ v1.3.0
+│   ├── patches/               # 4 patches do TFLM + library.json do esp-nn
+│   └── PROVENANCE.md          # linhagem e como reaplicar os patches
 ├── tools/                     # scripts utilitários
 │   └── patch_model_shapes.py  # patch de shapes S2B/B2S (1→16) como código
 ├── docs/
@@ -113,6 +115,10 @@ github_repo_fast_scnn_cats_dog/
 
 ## Fase 2 — Segurança e privacidade (P0 — bloqueador)
 
+> **Adiada (nov/2026):** o repositório está **privado** e o autor optou por
+> não alterar o histórico (ver D2 e 8.1). Reativar esta fase **antes** de
+> qualquer publicação pública.
+
 - [ ] 2.1 Remover SSID/senha de `src/main.cpp`; suportar configuração por
       um dos meios (decisão pendente **D2**):
       - Kconfig (`Kconfig.projbuild` → aparece no `menuconfig`) — recomendado;
@@ -142,26 +148,28 @@ github_repo_fast_scnn_cats_dog/
       `-DESP_NN`). Flag `-DESP_NN` mantida **ativa**.
       **PENDÊNCIA (D5): revalidação bit a bit em hardware** com a v1.3.0
       (procedimento em `firmware/comandos.txt`; playbook no README §7).
-- [x] 3.3 `tflite-lib`: permanece **vendored** (não há estado upstream que
-      o reproduza — verificado por fingerprinting exaustivo; linhagem
-      documentada em `components/PROVENANCE.md`). Modificações
-      locais identificadas e documentadas:
-      - `space_to_batch_nd.cc` — fix `output_offset` (candidato a PR upstream);
-      - `concatenation.cc` — `kMaxInputNum` 10 → 128 (**não documentado
-        antes**; necessário para concats >10 entradas do grafo convertido);
-      - `esp_nn/conv.cc` — **convolução dilatada int8 via sub-grids**
-        (`EvalQuantizedPerChannelDilated`) — não documentada antes; é o que
-        permite o decoder dilatado do Fast-SCNN rodar com esp-nn (pré-edição
-        em `patches/tflite-lib/reference/conv.cc.bak`);
-      - `micro_graph.cc` — OPTRACE agora **gated** por `#ifdef
-        ENABLE_OPTRACE` (off por padrão; linha comentada no CMakeLists);
-      - line endings normalizados LF (a distribuição original veio em CRLF).
-- [x] 3.4 Versões documentadas em `PROVENANCE.md`: esp-nn v1.3.0; core TFLM
-      = snapshot `tensorflow/tflite-micro` de ~mai/2023 (commits-âncora
-      `55dadb4f`/`e10c360b`); wrappers esp_nn sem commit público equivalente.
-- [x] **Critério de aceitação:** `git submodule add` + clone limpo com
-      `--recurse-submodules` + cópia do `library.json` reproduz o build
-      (verificado no smoke build da Fase 4).
+- [x] 3.3 `tflite-lib`: **submodule upstream** `espressif/esp-tflite-micro`
+      @ **v1.3.8** (`d6465fd`, nov/2026) + patches locais em
+      `components/patches/tflite-lib/` (ver `components/PROVENANCE.md`).
+      Histórico: a árvore antiga era um snapshot vendored de ~mai/2023 do
+      `tensorflow/tflite-micro` com wrappers adaptados; o fingerprinting
+      exaustivo mostrou que nenhum commit público a reproduzia. A saída foi
+      migrar para o upstream e manter apenas os diffs necessários:
+      - `space_to_batch_nd.patch` — fix `output_offset` (backport do fix que
+        entrou no upstream na v1.4.3);
+      - `concatenation.patch` — `kMaxInputNum` 10 → 128 (concats >10 entradas);
+      - `cmake-esp-nn-requirement.patch` — declara `esp-nn` no CMakeLists
+        (o upstream espera o IDF Component Manager);
+      - `disable-component-manager.patch` — remove `idf_component.yml` para
+        não duplicar o esp-nn em `managed_components/`.
+      Fora do escopo, preservado em `patches/tflite-lib/reference/`:
+      conv dilatada via sub-grids (o upstream cai no `reference`; porte
+      pendente) e OPTRACE (instrumentação local).
+- [x] 3.4 Versões documentadas em `PROVENANCE.md`: esp-tflite-micro v1.3.8
+      (`d6465fd`) e esp-nn v1.3.0 (`d8866fa`).
+- [~] **Critério de aceitação:** estrutura pronta — submodules pinados e
+      patches gerados contra a tag e verificados em checkout pristino.
+      **Falta o build e a revalidação bit a bit** na árvore nova (D5).
 
 ## Fase 4 — Firmware pronto para público (P1)
 
@@ -244,23 +252,26 @@ github_repo_fast_scnn_cats_dog/
 
 ## Fase 8 — Git, verificação final e publicação (P0)
 
-- [~] 8.1 `git init` **executado antecipadamente** (nov/2026, branch
-      `main`) — exigência técnica do modelo submodule. Commit inicial
-      criado com o estado pós-Fase 3. **ATENÇÃO:** o commit contém os
-      itens ainda não tratados da Fase 2 (credenciais WiFi em `main.cpp`,
-      notebook com outputs/caminho privado) — o histórico deve ser
-      limpo/reescrito **antes do primeiro push** (sem remote ainda, não
-      há risco de vazamento).
-- [ ] 8.1a Antes do push, decidir a **identidade de autor** dos commits
-      públicos: manter o email pessoal ou trocar pelo noreply do GitHub
-      (`<ID>+<usuario>@users.noreply.github.com`, Settings → Emails) —
-      a regravação do histórico (item 8.1) é o momento natural para
-      aplicar a escolha. Configurar via `git config user.email` antes de
-      regravar.
+- [x] 8.1 Repositório criado no GitHub
+      (`vini-muchulski/ESP32_image_segmentation_cats_dogs`), **privado**,
+      com 4 commits enviados (nov/2026): `7eb48dc` training, `38e05cb`
+      docs, `97b5e02` firmware e `51a0b55` submodules.
+      Decisões registradas: (a) `components/` **incluído** como submodules
+      upstream + patches (ver D4); (b) **sem correções de segurança** no
+      histórico — credenciais WiFi (`97b5e02`) e caminho privado no notebook
+      (`7eb48dc`) continuam nos commits (ver D2). **Não tornar o
+      repositório público** sem antes reescrever o histórico e trocar a
+      senha do WiFi.
+- [x] 8.1a Identidade de autor: os commits usam
+      `viniciusmuchulski2@gmail.com`; o noreply
+      (`105316221+vini-muchulski@users.noreply.github.com`) ficou
+      configurado apenas no workspace. Reavaliar se o histórico for
+      reescrito.
 - [ ] 8.2 Confirmar tamanho do repo: `git count-objects -vH` ≲ 50 MB;
       notebook ≤ 1 MB (outputs limpos); modelos ~12 MB ok (sem LFS).
-- [ ] 8.3 Smoke test de "estranho": `git clone` em outra pasta →
-      `pio run` → upload → inferência → máscara correta.
+- [ ] 8.3 Smoke test de "estranho": `git clone --recurse-submodules` →
+      aplicar os patches (`components/patches/`) → `pio run` → upload →
+      inferência → máscara correta.
 - [ ] 8.4 (Opcional, P2) GitHub Actions: build do firmware em push/PR
       (`pio run` com cache) — sinal de qualidade para visitantes.
 - [ ] 8.5 (Opcional, P2) `CONTRIBUTING.md` + templates de issue.
@@ -275,11 +286,11 @@ github_repo_fast_scnn_cats_dog/
 
 | # | Questão | Decisão |
 |---|---|---|
-| D1 | Renomear pastas para inglês (`firmware/`, `training/`, `components/`)? | **RESOLVIDA: `training/`, `firmware/` e `components/` executados (nov/2026)**; restam criar `tools/`, `docs/`, `assets/` |
-| D2 | Como configurar WiFi sem hard-code | Pendente (recomendo Kconfig) |
+| D1 | Renomear pastas para inglês (`firmware/`, `training/`, `components/`)? | **RESOLVIDA: `training/`, `firmware/` e `components/` executados (nov/2026)**; `tools/`, `docs/` e `assets/` seguem opcionais |
+| D2 | Como configurar WiFi sem hard-code | **Adiada (nov/2026):** credenciais seguem hard-coded enquanto o repo for privado; aplicar Kconfig (menuconfig) **antes** de qualquer publicação |
 | D3 | Dataset é redistribuível? | Pendente |
-| D4 | esp-nn: vendor vs submodule | **RESOLVIDA: ambos como submodules.** esp-nn → upstream @ v1.3.0 (+ override `library.json` em `patches/`). tflite-lib → **repo próprio do autor** (`vini-muchulski/tflite-lib-esp32s3`), pois nenhum upstream reproduz a árvore (ver `PROVENANCE.md`) |
-| D5 | Release com esp-nn v1.3.0 otimizado ou reference puro | **Parcialmente resolvido: esp-nn bumpado p/ v1.3.0, `-DESP_NN` ativo. Falta revalidação bit a bit em hardware (procedimento em `comandos.txt`)** |
+| D4 | esp-nn: vendor vs submodule | **RESOLVIDA (nov/2026):** ambos **submodules upstream** — esp-nn @ v1.3.0 e esp-tflite-micro @ v1.3.8; patches locais em `components/patches/` (ver `PROVENANCE.md`) |
+| D5 | Release com esp-nn v1.3.0 otimizado ou reference puro | **Parcialmente: esp-nn v1.3.0 + `-DESP_NN` ativo; falta revalidação bit a bit na árvore nova (TFLM v1.3.8 + patches) — procedimento em `firmware/comandos.txt`** |
 | D6 | Idioma dos docs públicos | Pendente (recomendo inglês + `README.pt-BR.md`) |
 | D7 | Licença | Pendente (recomendo Apache-2.0) |
 
