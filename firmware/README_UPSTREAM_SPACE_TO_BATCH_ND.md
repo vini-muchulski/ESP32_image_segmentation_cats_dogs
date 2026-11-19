@@ -1,0 +1,264 @@
+# Nota para issue/PR upstream: SPACE_TO_BATCH_ND no TFLite Micro
+
+Documento preparado em 02/09/2026 para preservar o diagnóstico e facilitar
+uma futura contribuição ao repositório oficial:
+https://github.com/tensorflow/tflite-micro
+
+## Resumo executivo
+
+O kernel Micro de SPACE_TO_BATCH_ND aloca um SpaceToBatchParams em memória
+persistente, mas não inicializa o campo output_offset. O kernel de referência
+usa esse campo como o byte das regiões de padding. Portanto, o resultado
+depende do conteúdo anterior da tensor arena: pode parecer correto em um host
+onde a memória venha zerada e falhar em um microcontrolador.
+
+No ESP32-S3 deste projeto, o campo não inicializado assumiu 0xAA (-86 como
+int8_t). Isso preencheu incorretamente 98.304 dos 153.600 bytes da saída do
+operador 46 e contaminou os operadores seguintes.
+
+A correção local foi:
+
+    SpaceToBatchParams* params =
+        static_cast<SpaceToBatchParams*>(node->user_data);
+    params->output_offset = output->params.zero_point;
+
+Após a correção, os 61 operadores, os 27.648 logits e as 9.216 classes ficaram
+bit a bit idênticos entre o ESP32 e o LiteRT no PC.
+
+## Estado upstream verificado em 02/09/2026
+
+O problema ainda existia em:
+
+- tensorflow/tflite-micro main, commit
+  bfeb43aa795adad4044bbf2e709062b1b989a98a, de 01/09/2026;
+- componente oficial Espressif esp-tflite-micro 1.4.0;
+- execução com ou sem ESP-NN, porque SPACE_TO_BATCH_ND não possui kernel
+  ESP-NN próprio e usa a implementação genérica do TFLite Micro.
+
+O TFLite/LiteRT completo já inicializa op_params.output_offset com o zero-point
+do tensor de saída antes de chamar o kernel. O patch proposto alinha o Micro ao
+comportamento do runtime completo.
+
+Referências oficiais:
+
+- implementação Micro observada:
+  https://github.com/tensorflow/tflite-micro/blob/bfeb43aa795adad4044bbf2e709062b1b989a98a/tensorflow/lite/micro/kernels/space_to_batch_nd.cc
+- kernel de referência que consome output_offset:
+  https://github.com/tensorflow/tflite-micro/blob/bfeb43aa795adad4044bbf2e709062b1b989a98a/tensorflow/lite/kernels/internal/reference/space_to_batch_nd.h
+- histórico do arquivo:
+  https://github.com/tensorflow/tflite-micro/commits/main/tensorflow/lite/micro/kernels/space_to_batch_nd.cc
+- implementação do TFLite/LiteRT completo:
+  https://github.com/tensorflow/tensorflow/blob/master/tensorflow/lite/kernels/space_to_batch_nd.cc
+- componente Espressif 1.4.0:
+  https://components.espressif.com/components/espressif/esp-tflite-micro/versions/1.4.0/readme?language=en
+
+Não foi encontrada nessa data uma issue ou PR nos repositórios
+tensorflow/tflite-micro e espressif/esp-tflite-micro que mencionasse
+especificamente SpaceToBatchParams, SPACE_TO_BATCH_ND e output_offset.
+
+## Cadeia causal no código
+
+O Init aloca o objeto, mas não o inicializa:
+
+    return context->AllocatePersistentBuffer(
+        context, sizeof(SpaceToBatchParams));
+
+O Prepare apenas valida os tensores. Depois, o Eval recupera o objeto:
+
+    const SpaceToBatchParams& params =
+        *(static_cast<const SpaceToBatchParams*>(node->user_data));
+
+O kernel de referência usa o campo diretamente:
+
+    const int32_t pad_value = params.output_offset;
+    memset(out, pad_value, depth * sizeof(T));
+
+A origem do erro não é o memset. O problema é o parâmetro entregue a ele sem
+inicialização.
+
+## Como o defeito foi isolado
+
+1. A imagem RGB, a normalização e a quantização foram igualadas no PC e no
+   ESP32. O tensor de entrada INT8 teve o mesmo hash FNV-1a: ed0f9095.
+2. Os logits brutos foram transportados por HTTP; hashes antes e depois
+   confirmaram que a comunicação não alterava os dados.
+3. ESP-NN foi desligado e o build foi limpo. O erro permaneceu.
+4. Foi criado o OPTRACE para registrar cada saída imediatamente após o
+   operador, antes do reuso do buffer da arena.
+5. Os operadores 0 a 45 eram idênticos. A primeira divergência surgiu no
+   operador 46, SPACE_TO_BATCH_ND, tensor 141.
+6. Nesse tensor, 98.304 de 153.600 bytes eram padding. Trocar somente esses
+   bytes de 0x00 para 0xAA na referência do PC reproduziu exatamente o hash
+   incorreto do ESP32: d0a7c58b.
+7. Com padding igual ao zero-point 0, o hash correto foi e5f1a78b.
+8. Após o patch, os 61 hashes ficaram iguais. O hash final dos logits foi
+   e00d853e e as contagens da máscara foram [6623, 0, 2593].
+
+Logs preservados:
+
+- python/results/golden_optrace_esp32.log: antes da correção;
+- python/results/golden_optrace_esp32_corrigido.log: depois da correção.
+
+O modelo também possuía shapes erradas nos tensores 141 e 142. Esse era um
+problema independente, já corrigido no arquivo TFLite. Não misturar esse assunto
+à futura issue do kernel: a reprodução upstream deve usar shapes válidas e
+isolar somente o padding quantizado.
+
+## Patch mínimo sugerido
+
+Adaptar os nomes ao código que existir em main no momento da contribuição. O
+diff conceitual no Prepare é:
+
+     TfLiteStatus SpaceToBatchNDPrepare(...) {
+       MicroContext* micro_context = GetMicroContext(context);
+    +  SpaceToBatchParams* params =
+    +      static_cast<SpaceToBatchParams*>(node->user_data);
+
+       // Obter e validar input/output.
+
+    +  params->output_offset = output->params.zero_point;
+
+       // Liberar tensores temporários.
+     }
+
+Confirmar também se o padrão atual exige uma validação explícita de
+node->user_data no Prepare.
+
+## Teste de regressão recomendado
+
+O teste deve falhar de forma determinística sem o patch. Não depender de a
+memória do host conter lixo, pois ela frequentemente vem zerada e esconde o
+defeito.
+
+Requisitos:
+
+1. Executar SPACE_TO_BATCH_ND com int8.
+2. Usar padding espacial diferente de zero.
+3. Usar input e output com o mesmo scale e zero-point diferente de zero, por
+   exemplo -7.
+4. Verificar todos os elementos, especialmente se o padding contém -7.
+5. Se a infraestrutura permitir, preencher a tensor arena com 0xAA antes da
+   inicialização.
+6. Manter um caso float para verificar que não houve regressão.
+
+O zero-point não nulo torna o teste determinístico: mesmo que a memória
+persistente venha zerada, o kernel sem o patch produzirá padding 0 em vez de -7.
+
+Arquivo esperado:
+
+    tensorflow/lite/micro/kernels/space_to_batch_nd_test.cc
+
+Comando típico:
+
+    bazel test //tensorflow/lite/micro/kernels:space_to_batch_nd_test
+
+Confirmar o nome atual do target no BUILD antes de enviar.
+
+## Checklist para retomar daqui a alguns meses
+
+- [ ] Verificar novamente se main inicializa output_offset com o zero-point.
+- [ ] Procurar issues e PRs abertas e fechadas pelos três termos do problema.
+- [ ] Registrar o SHA exato do commit atual.
+- [ ] Criar uma reprodução mínima sem Fast-SCNN, ESP-NN, HTTP ou OPTRACE.
+- [ ] Confirmar que o teste falha antes do patch e passa depois.
+- [ ] Ler o CONTRIBUTING.md atual e executar os testes exigidos.
+- [ ] Abrir uma issue primeiro, caso esse ainda seja o fluxo do projeto.
+- [ ] Enviar a PR vinculada à issue.
+- [ ] Não incluir o problema independente de shapes do modelo.
+- [ ] Acrescentar ao final deste documento os links da issue e da PR.
+
+Comandos de verificação:
+
+    git clone https://github.com/tensorflow/tflite-micro.git
+    cd tflite-micro
+    git log --oneline -- tensorflow/lite/micro/kernels/space_to_batch_nd.cc
+    git grep -n "output_offset" -- \
+      tensorflow/lite/micro/kernels/space_to_batch_nd.cc \
+      tensorflow/lite/kernels/internal/reference/space_to_batch_nd.h
+
+    gh issue list --repo tensorflow/tflite-micro \
+      --search "SPACE_TO_BATCH_ND output_offset"
+    gh pr list --repo tensorflow/tflite-micro --state all \
+      --search "SPACE_TO_BATCH_ND output_offset"
+
+## Texto-base da issue em inglês
+
+Título:
+
+    SPACE_TO_BATCH_ND uses an uninitialized output_offset for quantized padding
+
+Corpo:
+
+    ## Problem
+
+    The TFLite Micro SPACE_TO_BATCH_ND kernel allocates a
+    SpaceToBatchParams object with AllocatePersistentBuffer() in Init(), but
+    does not initialize SpaceToBatchParams::output_offset in Prepare().
+
+    reference_ops::SpaceToBatchND() later uses that field directly as the
+    padding value:
+
+        const int32_t pad_value = params.output_offset;
+        memset(out, pad_value, depth * sizeof(T));
+
+    As a result, quantized padding depends on previous tensor-arena contents.
+    It may appear correct on hosts where the allocation contains zero, but it
+    can produce arbitrary padding on a microcontroller.
+
+    ## Expected behavior
+
+    Quantized padding must represent real zero, which is the output tensor's
+    quantized zero point.
+
+    ## Observed behavior
+
+    On an ESP32-S3, the field contained 0xAA (-86 as int8_t). In the affected
+    tensor, 98,304 of 153,600 bytes were padding. Replacing the expected
+    padding bytes with 0xAA in the host reference reproduced the device hash
+    exactly.
+
+    ## Proposed fix
+
+        SpaceToBatchParams* params =
+            static_cast<SpaceToBatchParams*>(node->user_data);
+        params->output_offset = output->params.zero_point;
+
+    This matches the full TFLite/LiteRT implementation.
+
+    ## Regression test
+
+    Add an int8 test with non-zero spatial padding and a non-zero zero point,
+    for example -7. Verify that every padded value equals that zero point.
+    If supported, prefill the tensor arena with a sentinel such as 0xAA.
+
+    ## Version
+
+    Reproduced at commit: <UPDATE_WITH_CURRENT_SHA>
+
+## Texto-base da PR em inglês
+
+Título:
+
+    Fix quantized padding in SPACE_TO_BATCH_ND
+
+Corpo:
+
+    Fixes #<ISSUE_NUMBER>.
+
+    SPACE_TO_BATCH_ND stored SpaceToBatchParams in persistent arena memory but
+    did not initialize output_offset. The reference implementation uses this
+    field as the quantized padding value, making outputs dependent on stale
+    arena contents.
+
+    This change initializes output_offset from output->params.zero_point during
+    Prepare(), matching the full TFLite implementation. It also adds an int8
+    regression test with non-zero padding and a non-zero zero point.
+
+    Tests:
+
+        bazel test //tensorflow/lite/micro/kernels:space_to_batch_nd_test
+
+## Links finais
+
+- Issue: ainda não aberta.
+- Pull request: ainda não aberto.
