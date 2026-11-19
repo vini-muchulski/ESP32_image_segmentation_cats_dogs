@@ -45,4 +45,7 @@ O firmware usa um ESP32-S3 DevKitC-1 N16R8, com 16 MB de flash e 8 MB de PSRAM. 
 | [components](components/) | Submódulos da Espressif com versões fixadas e patches locais |
 | [docs](docs/) | Instalação, API, ficha do modelo e guias de porte e depuração |
 
-A arquitetura segue o Fast-SCNN de Poudel, Liwicki e Cipolla. [Artigo do Fast-SCNN](https://arxiv.org/abs/1902.04502)
+## Referências
+
+- Poudel, Liwicki e Cipolla (2019). [Fast-SCNN: Fast Semantic Segmentation Network (PDF)](https://arxiv.org/pdf/1902.04502)
+- Implementação em TensorFlow de Kshitiz Rimal. [Repositório Fast-SCNN](https://github.com/kshitizrimal/Fast-SCNN/tree/master) · [`tf_2_0_fast_scnn.py`, linha 116](https://github.com/kshitizrimal/Fast-SCNN/blob/master/tf_2_0_fast_scnn.py#L116)
