@@ -1,0 +1,45 @@
+# ============================================================
+# .gitignore — github_repo_fast_scnn_cats_dog
+# Fonte de verdade única: NÃO espalhar outros .gitignore nas
+# subpastas (o que valia para esp32_s3_code/.gitignore foi
+# absorvido aqui e o arquivo local foi removido).
+# ============================================================
+
+# ---------- PlatformIO ----------
+.pio/
+.pioenvs/
+.piolibdeps/
+.clangd
+.gcc-flags.json
+
+# ---------- ESP-IDF ----------
+build/
+managed_components/
+sdkconfig
+sdkconfig.old
+sdkconfig.esp32*
+# NOTA: sdkconfig.defaults PERMANECE versionado (fonte de
+# verdade das opções do projeto). Os três padrões acima pegam
+# apenas os arquivos gerados por build/menuconfig.
+
+# ---------- Python ----------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+*.egg-info/
+
+# ---------- Saídas de debug dos clientes host ----------
+# Máscaras/logits .npy, plots e traces OPTRACE gerados pelos
+# scripts python/ ao testar o dispositivo (regeneráveis).
+python/results/
+python/results_pc/
+python/old_results/
+
+# ---------- Editores / SO ----------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
