@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2070f21..13fc3c5 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -100,7 +100,7 @@ set(lib_srcs
+           "${compiler_mlir_dir}/lite/core/api/error_reporter.cc"
+           "${compiler_mlir_dir}/lite/schema/schema_utils.cc")
+ 
+-set(priv_req)
++set(priv_req esp-nn)
+ 
+ # include component requirements which were introduced after IDF version 4.1
+ if("${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" VERSION_GREATER "4.1")

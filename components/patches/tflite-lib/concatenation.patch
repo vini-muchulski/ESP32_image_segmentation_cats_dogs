@@ -1,0 +1,13 @@
+diff --git a/tensorflow/lite/micro/kernels/concatenation.cc b/tensorflow/lite/micro/kernels/concatenation.cc
+index 151d3b4..9642c9f 100644
+--- a/tensorflow/lite/micro/kernels/concatenation.cc
++++ b/tensorflow/lite/micro/kernels/concatenation.cc
+@@ -28,7 +28,7 @@ namespace tflite {
+ 
+ namespace {
+ 
+-constexpr int kMaxInputNum = 10;  // Maximum number of input tensors
++constexpr int kMaxInputNum = 128;  // Maximum number of input tensors
+ constexpr int kOutputTensor = 0;
+ 
+ struct OpData {

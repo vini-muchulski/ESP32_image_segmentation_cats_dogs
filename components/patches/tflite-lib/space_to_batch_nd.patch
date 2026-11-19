@@ -1,0 +1,18 @@
+diff --git a/tensorflow/lite/micro/kernels/space_to_batch_nd.cc b/tensorflow/lite/micro/kernels/space_to_batch_nd.cc
+index f8df149..289f94e 100644
+--- a/tensorflow/lite/micro/kernels/space_to_batch_nd.cc
++++ b/tensorflow/lite/micro/kernels/space_to_batch_nd.cc
+@@ -63,6 +63,13 @@ TfLiteStatus SpaceToBatchNDPrepare(TfLiteContext* context, TfLiteNode* node) {
+   TF_LITE_ENSURE(context, NumDimensions(output) <= kInputOutputMaxDimensionNum);
+   TF_LITE_ENSURE_TYPES_EQ(context, input->type, output->type);
+ 
++  // Padded elements are filled with real zero, which is the output zero point
++  // for quantized types.
++  TFLITE_DCHECK(node->user_data != nullptr);
++  auto* params = static_cast<SpaceToBatchParams*>(node->user_data);
++  params->output_offset =
++      input->type == kTfLiteInt8 ? output->params.zero_point : 0;
++
+   micro_context->DeallocateTempTfLiteTensor(input);
+   micro_context->DeallocateTempTfLiteTensor(output);
+   return kTfLiteOk;
