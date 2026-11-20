@@ -162,21 +162,7 @@ Comando típico:
 
 Confirmar o nome atual do target no BUILD antes de enviar.
 
-## Checklist para retomar daqui a alguns meses
-
-- [x] Verificar novamente se main inicializa output_offset com o zero-point
-      — **confirmado na v1.4.3 (nov/2026)**.
-- [ ] Procurar issues e PRs abertas e fechadas pelos três termos do problema.
-- [ ] Registrar o SHA exato do commit atual.
-- [ ] Criar uma reprodução mínima sem Fast-SCNN, ESP-NN, HTTP ou OPTRACE.
-- [ ] Confirmar que o teste falha antes do patch e passa depois.
-- [ ] Ler o CONTRIBUTING.md atual e executar os testes exigidos.
-- [ ] Abrir uma issue primeiro, caso esse ainda seja o fluxo do projeto.
-- [ ] Enviar a PR vinculada à issue.
-- [ ] Não incluir o problema independente de shapes do modelo.
-- [ ] Acrescentar ao final deste documento os links da issue e da PR.
-
-Comandos de verificação:
+## Verificação do código upstream
 
     git clone https://github.com/tensorflow/tflite-micro.git
     cd tflite-micro

@@ -4,15 +4,13 @@
 
 Embarcar a inferência do modelo **Fast-SCNN** (INT8, `96×96×3` → `96×96×3`
 logits, argmax de 3 classes: 0=fundo, 1=gato, 2=cachorro) no **ESP32-S3** com
-ESP-IDF (via PlatformIO), replicando a arquitetura validada nos projetos
-`TF_Lite-wolosky_net_paper/idf_esp32-s3/` e
-`TF_Lite-gatos_cachorro_unet_v3_DeepLab_Mobilenetv2/esp32_s3_code/`:
+ESP-IDF via PlatformIO. [Guia de instalação](../docs/QUICKSTART.md)
 
 1. **TFLite Micro + esp-nn** — `components/` traz os dois como submodules
    upstream (`esp-tflite-micro` v1.3.8 + `esp-nn` v1.3.0) com patches locais
    mínimos; `-DESP_NN` está **ativo**. O build de referência (sem esp-nn) foi
    validado bit a bit contra o LiteRT; a revalidação da árvore otimizada está
-   pendente (D5).
+   pendente.
 2. **Modelo em LittleFS** carregado para PSRAM em runtime (sem header C).
 3. **HTTP `esp_http_server`** com `POST /predict_bin` (entrada RGB raw de
    27.648 B), retorno de máscara ou logits e telemetria `X-*` (tempos,
@@ -33,23 +31,20 @@ ESP-IDF (via PlatformIO), replicando a arquitetura validada nos projetos
 
 | Tema | Decisão | Motivo |
 |---|---|---|
-| Framework | `framework = espidf` (PlatformIO) | Integração direta com TFLM, LittleFS e futura ativação controlada do esp-nn |
+| Framework | `framework = espidf` (PlatformIO) | Integração com TFLM, LittleFS e kernels do esp-nn |
 | Modelo | `data/gatos_v5_fast_scnn.tflite` (25 chars) | `mklittlefs` limita nomes a 32 chars; original preservado no diretório de treino |
 | TFLite Micro | submodule `espressif/esp-tflite-micro` @ v1.3.8 via `EXTRA_COMPONENT_DIRS` (`components/tflite-lib`) | Componente IDF com kernels esp-nn; 4 patches em `components/patches/tflite-lib/` |
 | Versão do TFLM | `esp-tflite-micro` **v1.3.8** | Mantém a API usada pelo `main.cpp` (`tflite_bridge/micro_error_reporter.h`) e o esp-nn v1.3.0; a v1.4.3 exigiria port da API + esp-nn ≥ 1.4.2 |
-| ESP-NN | submodule `espressif/esp-nn` @ v1.3.0, `-DESP_NN` **ativo** | v1.3.0 corrige o Conv2D S3; revalidação bit a bit pendente (D5) |
+| ESP-NN | submodule `espressif/esp-nn` @ v1.3.0, `-DESP_NN` **ativo** | v1.3.0 corrige o Conv2D S3; revalidação bit a bit pendente |
 | Op resolver | `MicroMutableOpResolver<9>` | Add, AveragePool2D, BatchToSpaceNd, Concatenation, Conv2D, DepthwiseConv2D, Mul, ResizeBilinear, SpaceToBatchNd |
 | Normalização de entrada | ImageNet por canal: `(px/255 - mean[c])/std[c]`, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225) | **Diferente do v3** (`px/127.5 - 1`); modelo treinado com essa normalização |
 | Quantização input | `q = round(v/scale) + zp`, scale=0.018658448, zp=−14 | Lida do tensor; input int8 |
 | Pós-processamento | Argmax 3 classes sobre logits int8 | Quantização per-tensor ⇒ argmax int8 ≡ argmax float |
-| Arena TFLM | 4 MiB em PSRAM | Valor conservador; reduzir após medir `arena_used_bytes` |
+| Arena TFLM | 4 MiB em PSRAM | Uso observado de aproximadamente 325 KiB no build de referência |
 | Partições | app 6 MB + littlefs 9,88 MB + coredump (16 MB) | Mesma tabela dos outros projetos |
 | Classes de saída | 0=fundo, 1=gato, 2=cachorro | Validado no sanity check do host |
 
 ## Estrutura
-
-> O treino/artefatos agora vivem em `training/` (raiz do repositório);
-> o diagrama abaixo mostra a localização relativa deste porte.
 
 ```
 ESP32_image_segmentation_cats_dogs/
@@ -59,8 +54,8 @@ ESP32_image_segmentation_cats_dogs/
 │   ├── models/                                    # inclui o int8_full original
 │   │   └── model_..._infer_int8_full.tflite       # original 1.527.800 B (MD5 179689eb...)
 │   └── results/
-├── firmware/                                      # ← porte ESP32 (este plano)
-│   ├── README.md                                  # este plano
+├── firmware/                                      # firmware para ESP32-S3
+│   ├── README.md                                  # documentação do firmware
 │   ├── platformio.ini                             # espidf, 16 MB QIO, littlefs
 │   ├── partitions.csv                             # app 6 MB + littlefs 9,88 MB
 │   ├── sdkconfig.defaults                         # 240 MHz, QIO 80M, PSRAM OPI, WDT 15 s
@@ -86,42 +81,8 @@ ESP32_image_segmentation_cats_dogs/
     └── PROVENANCE.md
 ```
 
-> Nota (nov/2026): `.venv/`, `managed_components/` e os diretórios de
-> saída `python/results*/` foram removidos da higiene (Fase 1) e são
-> ignorados pelo `.gitignore` raiz; regeneram-se no build/teste.
-
-## Fases (checklist de execução)
-
-### Fase 0 — Modelo e pipeline host
-- [x] Modelo INT8 inspecionado: 9 ops únicas / 61 operadores.
-- [x] Normalização ImageNet e quantização INT8 validadas.
-- [x] Inferência LiteRT coerente no PC.
-- [x] Shapes inválidas dos tensores 141/142 identificadas e corrigidas no
-      modelo embarcado (`1 → 16` na dimensão batch).
-
-### Fase 1 — Porte ESP-IDF
-- [x] Build PlatformIO/ESP-IDF, LittleFS, partições e PSRAM configurados.
-- [x] Modelo de 1.527.800 bytes carregado do LittleFS para PSRAM.
-- [x] Arena de 4 MiB alocada; uso observado ~325 KiB no build de referência.
-- [x] Servidor HTTP, máscara, logits, hashes e telemetria funcionando.
-
-### Fase 2 — Diagnóstico e correção
-- [x] Entrada quantizada PC × ESP32 bit-idêntica (`ed0f9095`).
-- [x] esp-nn desligado por A/B; divergência permaneceu.
-- [x] Primeiro erro localizado no operador 46 (`SPACE_TO_BATCH_ND`).
-- [x] Padding incorreto `0xAA` reproduzido exatamente.
-- [x] `SpaceToBatchParams::output_offset` inicializado com o zero-point.
-- [x] Todos os 61 operadores validados bit a bit contra LiteRT.
-- [x] Logits e máscara final bit-idênticos; golden = `[6623, 0, 2593]`.
-
-### Fase 3 — Otimização e acabamento
-- [x] Migrar `tflite-lib` para o upstream `espressif/esp-tflite-micro` v1.3.8
-      como submodule (+ patches em `components/patches/`).
-- [x] Atualizar esp-nn para v1.3.0 (submodule) e reativar `-DESP_NN`.
-- [x] `OPTRACE` fora do build (a árvore nova não inclui a instrumentação).
-- [ ] **Revalidar bit a bit a árvore otimizada** (TFLM v1.3.8 + patches) no
-      hardware — procedimento em `comandos.txt` e no [guia de depuração](../docs/TFLM_DEBUG_PLAYBOOK.md).
-- [ ] Medir desempenho final e reduzir a arena, se desejado.
+`.venv/`, `managed_components/` e as saídas em `python/results*/` são
+diretórios locais ignorados pelo Git.
 
 ## Cobertura do esp-nn (v1.3.0)
 
@@ -154,15 +115,12 @@ potencial**; os demais continuam no TFLM genérico. Após o build, confirmar com
 | Golden | `[6623, 0, 2593]` no ESP32 e PC |
 | `OPTRACE` | não incluído na árvore nova (era instrumentação local) |
 | Componentes | submodules esp-tflite-micro v1.3.8 + esp-nn v1.3.0, patches aplicados |
-| Otimização | `-DESP_NN` **ativo**; revalidação bit a bit **pendente** (D5) |
+| Otimização | `-DESP_NN` **ativo**; revalidação bit a bit **pendente** |
 
 ## Diagnóstico resolvido e cuidados
 
-Para abrir futuramente uma issue ou PR upstream sobre o defeito do
-`SPACE_TO_BATCH_ND`, consulte o documento dedicado
-[`README_UPSTREAM_SPACE_TO_BATCH_ND.md`](README_UPSTREAM_SPACE_TO_BATCH_ND.md),
-que preserva a evidência, o patch mínimo, o teste de regressão proposto e
-textos-base em inglês.
+O [registro técnico do SPACE_TO_BATCH_ND](README_UPSTREAM_SPACE_TO_BATCH_ND.md)
+reúne a evidência, o patch e a proposta de teste de regressão.
 
 **Resumo:** O erro estava no operador `SPACE_TO_BATCH_ND` do TFLite
 Micro, cujo parâmetro `output_offset`, usado como valor de padding em tensores
@@ -246,10 +204,9 @@ padding `0xAA`, está nas [notas de engenharia](../docs/HISTORY_2026_09.md).
 
 ## Ambiente `pio`
 
-Requer PlatformIO Core ≥ 6.1.19. Neste ambiente, o `pio` do sistema estava
-quebrado (core órfão/versão apt incompatível); o autor usa um venv local
-(`source .venv/bin/activate`, ignorado pelo git) ou o `penv` da extensão do
-VSCode.
+O firmware usa PlatformIO Core 6.1.19 ou superior. Siga o [guia de instalação](../docs/QUICKSTART.md)
+para preparar os componentes e configurar o Wi-Fi. Execute os comandos em
+`firmware/` e substitua o endereço de exemplo pelo IP do ESP32.
 
 ## Comandos
 
@@ -259,7 +216,7 @@ pio run                       # build
 pio run -t buildfs            # gera imagem LittleFS (data/)
 pio run -t uploadfs           # grava LittleFS (1ª vez obrigatório)
 pio run -t upload -t monitor  # grava app + monitor serial
-ESP32_IP=<ip> .venv/bin/python python/teste_inferencia.py
+ESP32_IP=192.0.2.10 .venv/bin/python python/teste_inferencia.py
 ```
 
 Dependências dos scripts Python: `pip install ai-edge-litert numpy pillow

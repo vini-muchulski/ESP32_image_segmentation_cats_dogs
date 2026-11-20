@@ -38,9 +38,10 @@ Parâmetros: 1,204 M · pyramid bins `(1, 3)` · normalização ImageNet
 Não sobrescreva um pelo outro. O LiteRT no PC produz a mesma saída para os
 dois; o TFLite Micro no ESP32 exige a versão patcheada.
 
-## Reprodução (pendente de documentação completa)
+## Dataset de treino
 
-O notebook referencia um `manifest.csv` de dataset privado no caminho
-absoluto original (parametrização pendente — ver `PLAN.md`, Fase 5). Para
-retreinar com dataset próprio, o formato esperado é o do manifest
-(img_path/msk_path por linha) com máscaras em classes {0,1,2}.
+O notebook original referencia um dataset privado. Para usar seu próprio
+dataset, ajuste o caminho para o `manifest.csv` no notebook. O arquivo deve
+ter as colunas `img_path` e `msk_path`, com uma imagem e sua máscara por
+linha. Os valores das máscaras são `0` para fundo, `1` para gato e `2`
+para cachorro.
